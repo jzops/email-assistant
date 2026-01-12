@@ -1,0 +1,25 @@
+{
+  "name": "email-assistant",
+  "version": "1.0.0",
+  "description": "AI email assistant that coordinates scheduling when CC'd",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "express": "^4.21.0",
+    "googleapis": "^144.0.0",
+    "nylas": "^7.5.2",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
