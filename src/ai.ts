@@ -35,9 +35,17 @@ JSON only, no explanation:`
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '';
 
+  // Strip ```json ... ``` or ``` ... ``` fences the model sometimes adds.
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+
   try {
-    return JSON.parse(text.trim());
-  } catch {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.warn('parseSchedulingIntent: failed to parse JSON from model. Raw text:', text);
     return { type: 'unknown', participants: [] };
   }
 }
@@ -91,14 +99,22 @@ Write ONLY the email body (no subject line):`
 }
 
 export async function shouldAssistantRespond(email: EmailMessage, assistantEmail: string): Promise<boolean> {
+  const assistant = assistantEmail.toLowerCase();
+
   // Don't respond to emails from ourselves
-  if (email.from.toLowerCase().includes(assistantEmail.toLowerCase())) {
+  if (email.from.toLowerCase().includes(assistant)) {
+    console.log(`[filter] skip ${email.id}: from is the assistant (${email.from})`);
     return false;
   }
 
-  // Must be CC'd (not direct to)
-  const isCCd = email.cc.some(cc => cc.toLowerCase().includes(assistantEmail.toLowerCase()));
-  if (!isCCd) {
+  // Assistant must be a recipient — accept either To: or Cc:.
+  const isRecipient =
+    email.to.some(addr => addr.toLowerCase().includes(assistant)) ||
+    email.cc.some(addr => addr.toLowerCase().includes(assistant));
+  if (!isRecipient) {
+    console.log(
+      `[filter] skip ${email.id}: assistant ${assistant} not in To: [${email.to.join(', ')}] or Cc: [${email.cc.join(', ')}]`
+    );
     return false;
   }
 
@@ -119,5 +135,9 @@ Answer:`
   });
 
   const text = response.content[0].type === 'text' ? response.content[0].text : '';
-  return text.trim().toUpperCase().startsWith('YES');
+  const isScheduling = text.trim().toUpperCase().startsWith('YES');
+  if (!isScheduling) {
+    console.log(`[filter] skip ${email.id}: classifier said this isn't a scheduling request (got: "${text.trim()}")`);
+  }
+  return isScheduling;
 }

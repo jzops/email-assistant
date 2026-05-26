@@ -88,40 +88,61 @@ export async function getThreadMessages(threadId: string): Promise<EmailMessage[
   }
 }
 
+function buildReplyEnvelope(originalMessage: EmailMessage, replyBody: string) {
+  const assistantEmail = process.env.ASSISTANT_EMAIL!.toLowerCase();
+
+  const toRecipients = [originalMessage.from];
+  const ccRecipients = [
+    ...originalMessage.to,
+    ...originalMessage.cc
+  ].filter(email =>
+    email.toLowerCase() !== assistantEmail &&
+    email.toLowerCase() !== originalMessage.from.toLowerCase()
+  );
+
+  return {
+    subject: originalMessage.subject.startsWith('Re:')
+      ? originalMessage.subject
+      : `Re: ${originalMessage.subject}`,
+    body: replyBody,
+    to: toRecipients.map(email => ({ email })),
+    cc: ccRecipients.map(email => ({ email })),
+    replyToMessageId: originalMessage.id
+  };
+}
+
 export async function sendReply(
   originalMessage: EmailMessage,
   replyBody: string
 ): Promise<boolean> {
   try {
-    // Build recipient list: reply to sender, include all original recipients except ourselves
-    const assistantEmail = process.env.ASSISTANT_EMAIL!.toLowerCase();
-
-    const toRecipients = [originalMessage.from];
-    const ccRecipients = [
-      ...originalMessage.to,
-      ...originalMessage.cc
-    ].filter(email =>
-      email.toLowerCase() !== assistantEmail &&
-      email.toLowerCase() !== originalMessage.from.toLowerCase()
-    );
-
     await nylas.messages.send({
       identifier: grantId,
-      requestBody: {
-        subject: originalMessage.subject.startsWith('Re:')
-          ? originalMessage.subject
-          : `Re: ${originalMessage.subject}`,
-        body: replyBody,
-        to: toRecipients.map(email => ({ email })),
-        cc: ccRecipients.map(email => ({ email })),
-        replyToMessageId: originalMessage.id
-      }
+      requestBody: buildReplyEnvelope(originalMessage, replyBody)
     });
 
     console.log(`Reply sent to thread ${originalMessage.threadId}`);
     return true;
   } catch (error) {
     console.error('Error sending reply:', error);
+    return false;
+  }
+}
+
+export async function createDraftReply(
+  originalMessage: EmailMessage,
+  replyBody: string
+): Promise<boolean> {
+  try {
+    const draft = await nylas.drafts.create({
+      identifier: grantId,
+      requestBody: buildReplyEnvelope(originalMessage, replyBody)
+    });
+
+    console.log(`Draft created (id=${draft.data.id}) for thread ${originalMessage.threadId}`);
+    return true;
+  } catch (error) {
+    console.error('Error creating draft:', error);
     return false;
   }
 }

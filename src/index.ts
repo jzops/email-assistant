@@ -4,6 +4,7 @@ import {
   getMessage,
   getThreadMessages,
   sendReply,
+  createDraftReply,
   verifyWebhookSignature
 } from './email';
 import {
@@ -28,6 +29,8 @@ const ASSISTANT_EMAIL = process.env.ASSISTANT_EMAIL!;
 const USER_NAME = process.env.USER_NAME || 'the executive';
 const USER_TIMEZONE = process.env.USER_TIMEZONE || 'America/New_York';
 const WEBHOOK_SECRET = process.env.NYLAS_WEBHOOK_SECRET;
+// 'draft' (default) saves replies to the Drafts folder for review; 'send' delivers immediately.
+const REPLY_MODE = (process.env.REPLY_MODE || 'draft').toLowerCase();
 
 // Track processed messages to avoid duplicates
 const processedMessages = new Set<string>();
@@ -46,44 +49,40 @@ async function handleIncomingEmail(email: EmailMessage): Promise<void> {
     processedMessages.delete(firstItem);
   }
 
-  console.log(`\n--- Processing email ---`);
-  console.log(`From: ${email.from}`);
+  console.log(`\n--- Processing email ${email.id} ---`);
+  console.log(`From:    ${email.from}`);
+  console.log(`To:      [${email.to.join(', ')}]`);
+  console.log(`Cc:      [${email.cc.join(', ')}]`);
   console.log(`Subject: ${email.subject}`);
 
-  // Check if we should respond
   const shouldRespond = await shouldAssistantRespond(email, ASSISTANT_EMAIL);
   if (!shouldRespond) {
-    console.log('Not a scheduling request or not CC\'d. Skipping.');
+    // shouldAssistantRespond logs the specific filter reason
     return;
   }
 
-  console.log('Scheduling request detected. Processing...');
+  console.log('[ok] passes filters; gathering thread context');
 
-  // Get full thread context
   const threadMessages = await getThreadMessages(email.threadId);
   const fullContext = threadMessages
     .sort((a, b) => a.date.getTime() - b.date.getTime())
     .map(m => `From: ${m.from}\n${m.body}`)
     .join('\n---\n');
 
-  // Create a context-enriched email for parsing
   const contextEmail = { ...email, body: fullContext };
 
-  // Parse scheduling intent
   const intent = await parseSchedulingIntent(contextEmail);
-  console.log('Intent:', JSON.stringify(intent, null, 2));
+  console.log('[ok] parsed intent:', JSON.stringify(intent, null, 2));
 
   if (intent.type === 'unknown') {
-    console.log('Could not determine scheduling intent. Skipping.');
+    console.log(`[filter] skip ${email.id}: intent classifier returned 'unknown'`);
     return;
   }
 
-  // Find available slots
   const duration = intent.duration || 30;
   const availableSlots = await findAvailableSlots(7, duration);
-  console.log(`Found ${availableSlots.length} available slots`);
+  console.log(`[ok] found ${availableSlots.length} available slots over the next 7 days`);
 
-  // Generate reply
   const replyBody = await generateReply(
     email,
     intent,
@@ -92,14 +91,16 @@ async function handleIncomingEmail(email: EmailMessage): Promise<void> {
     USER_NAME
   );
 
-  console.log('Generated reply:', replyBody.substring(0, 200) + '...');
+  console.log('[ok] generated reply:', replyBody.substring(0, 200) + (replyBody.length > 200 ? '...' : ''));
 
-  // Send the reply
-  const sent = await sendReply(email, replyBody);
-  if (sent) {
-    console.log('Reply sent successfully!');
+  const delivered = REPLY_MODE === 'send'
+    ? await sendReply(email, replyBody)
+    : await createDraftReply(email, replyBody);
+
+  if (delivered) {
+    console.log(`[ok] ${REPLY_MODE === 'send' ? 'reply sent' : 'draft saved'} for thread ${email.threadId}`);
   } else {
-    console.log('Failed to send reply');
+    console.log(`[fail] could not ${REPLY_MODE === 'send' ? 'send reply' : 'create draft'} for thread ${email.threadId}`);
   }
 }
 
@@ -178,6 +179,7 @@ app.listen(PORT, () => {
 ║  Server running on port ${PORT}                  ║
 ║  Assistant email: ${ASSISTANT_EMAIL?.substring(0, 25) || 'Not configured'}
 ║  User timezone: ${USER_TIMEZONE}
+║  Reply mode: ${REPLY_MODE} (set REPLY_MODE=send to deliver immediately)
 ╚═══════════════════════════════════════════════╝
 
 Endpoints:
