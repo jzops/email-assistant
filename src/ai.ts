@@ -69,7 +69,7 @@ export async function generateReply(
     messages: [
       {
         role: 'user',
-        content: `You are an executive assistant for ${userName}. Write a professional, warm email reply to coordinate scheduling.
+        content: `Draft a reply that ${userName} can review and send. Write in first person as ${userName}.
 
 Original email:
 From: ${email.from}
@@ -79,16 +79,14 @@ Body: ${email.body}
 Scheduling intent detected: ${intent.type}
 ${intent.subject ? `Meeting topic: ${intent.subject}` : ''}
 
-${userName}'s available times:
+Available times:
 ${slotsDescription}
 
 Guidelines:
-- Be concise and professional
-- If proposing times, offer 2-3 options
-- Include timezone (${userTimezone})
-- Sign as "${userName}'s assistant"
-- Don't use overly formal language
-- If no slots available, suggest they propose alternative times
+- Concise, warm, professional — match how a busy operator writes.
+- If proposing times, offer 2-3 options and include the timezone (${userTimezone}).
+- If no slots available, ask them to propose alternative times.
+- Do NOT add a signature or sign-off — ${userName} will append their own.
 
 Write ONLY the email body (no subject line):`
       }
@@ -98,23 +96,40 @@ Write ONLY the email body (no subject line):`
   return response.content[0].type === 'text' ? response.content[0].text : '';
 }
 
-export async function shouldAssistantRespond(email: EmailMessage, assistantEmail: string): Promise<boolean> {
-  const assistant = assistantEmail.toLowerCase();
+// Senders that are almost always automated/transactional. Skipped before
+// calling the LLM to keep classifier cost low.
+const AUTOMATED_SENDER_PATTERNS = [
+  /(^|[<\s])no[-_.]?reply@/i,
+  /(^|[<\s])do[-_.]?not[-_.]?reply@/i,
+  /notifications?@/i,
+  /notify@/i,
+  /mailer-daemon@/i,
+  /postmaster@/i,
+  /bounces?@/i,
+  /@.*\.mail\.notion\.so/i,
+  /@notifications\./i,
+  /@mail\.smbdealhunter\./i,
+  /@notifications\.vasco\./i,
+  /fred@fireflies\.ai/i,
+  /gemini-notes@google\.com/i,
+  /notifications@mixmax\.com/i,
+  /notifications@ashbyhq\.com/i
+];
 
-  // Don't respond to emails from ourselves
-  if (email.from.toLowerCase().includes(assistant)) {
-    console.log(`[filter] skip ${email.id}: from is the assistant (${email.from})`);
+function looksAutomated(fromAddress: string): boolean {
+  return AUTOMATED_SENDER_PATTERNS.some(re => re.test(fromAddress));
+}
+
+export async function shouldDraftReply(email: EmailMessage, userEmail: string): Promise<boolean> {
+  const me = userEmail.toLowerCase();
+
+  if (email.from.toLowerCase().includes(me)) {
+    console.log(`[filter] skip ${email.id}: from is the user (${email.from})`);
     return false;
   }
 
-  // Assistant must be a recipient — accept either To: or Cc:.
-  const isRecipient =
-    email.to.some(addr => addr.toLowerCase().includes(assistant)) ||
-    email.cc.some(addr => addr.toLowerCase().includes(assistant));
-  if (!isRecipient) {
-    console.log(
-      `[filter] skip ${email.id}: assistant ${assistant} not in To: [${email.to.join(', ')}] or Cc: [${email.cc.join(', ')}]`
-    );
+  if (looksAutomated(email.from)) {
+    console.log(`[filter] skip ${email.id}: from looks automated (${email.from})`);
     return false;
   }
 
@@ -124,7 +139,7 @@ export async function shouldAssistantRespond(email: EmailMessage, assistantEmail
     messages: [
       {
         role: 'user',
-        content: `Is this email requesting help with scheduling/coordinating a meeting time? Reply YES or NO only.
+        content: `Is this email a scheduling or meeting-coordination request that needs a reply proposing or confirming a time? Reply YES or NO only.
 
 Subject: ${email.subject}
 Body: ${email.body}
@@ -137,7 +152,7 @@ Answer:`
   const text = response.content[0].type === 'text' ? response.content[0].text : '';
   const isScheduling = text.trim().toUpperCase().startsWith('YES');
   if (!isScheduling) {
-    console.log(`[filter] skip ${email.id}: classifier said this isn't a scheduling request (got: "${text.trim()}")`);
+    console.log(`[filter] skip ${email.id}: classifier said not a scheduling request (got: "${text.trim()}")`);
   }
   return isScheduling;
 }

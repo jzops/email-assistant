@@ -1,14 +1,18 @@
 # Email Scheduling Assistant
 
-An AI-powered email assistant that coordinates meeting times when CC'd on emails.
+An AI-powered email assistant that watches your inbox and drafts
+scheduling replies in your Drafts folder for you to review and send.
 
 ## How It Works
 
-1. CC `assistant@yourdomain.com` on an email thread about scheduling
-2. The assistant reads the thread, understands what's being scheduled
-3. Checks your calendar for availability
-4. Replies with available time slots
-5. Can create calendar events when times are confirmed
+1. Nylas forwards each new incoming message to this server's webhook.
+2. The classifier filters out emails from you and obvious automated
+   senders, then asks an LLM whether the email needs a scheduling reply.
+3. For matching messages it reads the full thread, checks your calendar
+   for availability, and drafts a first-person reply with 2-3 proposed
+   times.
+4. The draft lands in your Gmail Drafts folder — you review, edit, send.
+5. Default is drafts-only. Set `REPLY_MODE=send` to deliver immediately.
 
 ## Setup
 
@@ -74,26 +78,22 @@ Then update your Nylas webhook URL to the ngrok URL.
 
 ## Usage
 
-Simply CC your assistant email on any scheduling-related email:
-
-```
-To: client@example.com
-CC: assistant@yourdomain.com
-Subject: Let's schedule a call
-
-Hi! I'd love to set up a 30-minute call to discuss the project.
-What times work for you next week?
-```
-
-The assistant will reply with your available slots.
+Once the webhook is wired up, the assistant runs automatically on every
+incoming email. No special action — no need to CC anything. When a
+scheduling email arrives, the corresponding draft appears in your
+Drafts folder.
 
 ## Configuration
 
 | Variable | Description |
 |----------|-------------|
-| `ASSISTANT_EMAIL` | The email address of your assistant |
-| `USER_NAME` | Your name (used in replies) |
+| `USER_EMAIL` | Your email address (the inbox Nylas is connected to) |
+| `USER_NAME` | Your name (used in the drafted reply) |
 | `USER_TIMEZONE` | Your timezone (e.g., `America/New_York`) |
+| `REPLY_MODE` | `draft` (default) saves to Drafts; `send` delivers immediately |
+| `NYLAS_API_KEY` | Nylas API key |
+| `NYLAS_GRANT_ID` | Nylas grant ID for your mailbox |
+| `NYLAS_WEBHOOK_SECRET` | Optional, enables webhook signature verification |
 
 ## Deployment Options
 

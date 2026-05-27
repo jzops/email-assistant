@@ -10,7 +10,7 @@ import {
 import {
   parseSchedulingIntent,
   generateReply,
-  shouldAssistantRespond
+  shouldDraftReply
 } from './ai';
 import { findAvailableSlots, createCalendarEvent } from './calendar';
 import { EmailMessage } from './types';
@@ -25,7 +25,7 @@ app.use(express.json({
 }));
 
 const PORT = process.env.PORT || 3000;
-const ASSISTANT_EMAIL = process.env.ASSISTANT_EMAIL!;
+const USER_EMAIL = process.env.USER_EMAIL!;
 const USER_NAME = process.env.USER_NAME || 'the executive';
 const USER_TIMEZONE = process.env.USER_TIMEZONE || 'America/New_York';
 const WEBHOOK_SECRET = process.env.NYLAS_WEBHOOK_SECRET;
@@ -55,9 +55,9 @@ async function handleIncomingEmail(email: EmailMessage): Promise<void> {
   console.log(`Cc:      [${email.cc.join(', ')}]`);
   console.log(`Subject: ${email.subject}`);
 
-  const shouldRespond = await shouldAssistantRespond(email, ASSISTANT_EMAIL);
+  const shouldRespond = await shouldDraftReply(email, USER_EMAIL);
   if (!shouldRespond) {
-    // shouldAssistantRespond logs the specific filter reason
+    // shouldDraftReply logs the specific filter reason
     return;
   }
 
@@ -139,7 +139,7 @@ app.post('/webhook', async (req, res) => {
 
 // Health check endpoint
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', assistant: ASSISTANT_EMAIL });
+  res.json({ status: 'ok', user: USER_EMAIL, replyMode: REPLY_MODE });
 });
 
 // Manual trigger for testing (fetch recent emails)
@@ -177,7 +177,7 @@ app.listen(PORT, () => {
 ║       Email Scheduling Assistant              ║
 ╠═══════════════════════════════════════════════╣
 ║  Server running on port ${PORT}                  ║
-║  Assistant email: ${ASSISTANT_EMAIL?.substring(0, 25) || 'Not configured'}
+║  User email: ${USER_EMAIL?.substring(0, 30) || 'Not configured'}
 ║  User timezone: ${USER_TIMEZONE}
 ║  Reply mode: ${REPLY_MODE} (set REPLY_MODE=send to deliver immediately)
 ╚═══════════════════════════════════════════════╝

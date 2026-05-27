@@ -89,14 +89,16 @@ export async function getThreadMessages(threadId: string): Promise<EmailMessage[
 }
 
 function buildReplyEnvelope(originalMessage: EmailMessage, replyBody: string) {
-  const assistantEmail = process.env.ASSISTANT_EMAIL!.toLowerCase();
+  // The draft is sent from the user's own account, so strip the user out of
+  // the carried-over recipient list to avoid Cc'ing themselves.
+  const userEmail = process.env.USER_EMAIL!.toLowerCase();
 
   const toRecipients = [originalMessage.from];
   const ccRecipients = [
     ...originalMessage.to,
     ...originalMessage.cc
   ].filter(email =>
-    email.toLowerCase() !== assistantEmail &&
+    email.toLowerCase() !== userEmail &&
     email.toLowerCase() !== originalMessage.from.toLowerCase()
   );
 
